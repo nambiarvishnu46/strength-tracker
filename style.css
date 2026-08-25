@@ -51,6 +51,11 @@ body {
 }
 .topbar-title { font-size: 21px; font-weight: 800; letter-spacing: -0.2px; }
 .topbar-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .topbar-timer {
   font-size: 14px;
   font-weight: 700;
@@ -59,6 +64,115 @@ body {
   padding: 6px 12px;
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
+}
+.profile-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 6px 12px 6px 8px;
+  white-space: nowrap;
+}
+.profile-chip .avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ */
+/* Login / profile setup screen                                       */
+/* ------------------------------------------------------------------ */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.login-screen.hidden { display: none; }
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+.login-logo { font-size: 40px; margin-bottom: 10px; }
+.login-title { font-size: 24px; font-weight: 800; margin: 0 0 8px; }
+.login-sub { font-size: 13px; color: var(--muted); margin: 0 0 20px; line-height: 1.5; }
+.login-input {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 15px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.login-input:focus { border-color: var(--accent); outline: none; }
+.login-profile-list {
+  margin-top: 18px;
+  text-align: left;
+}
+.login-profile-list .lbl {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted2);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.profile-row-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.profile-row-btn .avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.login-cancel {
+  margin-top: 14px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 8px;
 }
 
 #app {

@@ -17,13 +17,28 @@
 </head>
 <body>
 
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="login-logo">&#128170;</div>
+    <h1 class="login-title">Strength Tracker</h1>
+    <p class="login-sub">Set up your profile with a username. No password needed &mdash; just pick a name to track your own workouts, history and progress.</p>
+    <input type="text" id="loginUsernameInput" class="login-input" placeholder="Enter a username" autocomplete="off" autocapitalize="off" />
+    <button class="btn-primary" id="loginContinueBtn">Continue</button>
+    <div id="loginProfileList" class="login-profile-list"></div>
+    <button class="login-cancel" id="loginCancelBtn" style="display:none;">Cancel</button>
+  </div>
+</div>
+
 <header class="topbar">
   <div class="topbar-row">
     <div>
       <div class="topbar-title" id="topbarTitle">Strength Tracker</div>
       <div class="topbar-sub" id="topbarSub"></div>
     </div>
-    <div class="topbar-timer" id="topbarTimer" style="display:none;"></div>
+    <div class="topbar-right">
+      <div class="topbar-timer" id="topbarTimer" style="display:none;"></div>
+      <button class="profile-chip" id="profileChipBtn"></button>
+    </div>
   </div>
 </header>
 

@@ -1,8 +1,7 @@
 // app.js
 // Core app logic: rendering, localStorage persistence, history, progress, CSV export.
-
-const STORAGE_KEY = "strengthTracker.sessions.v1";
-const DRAFT_KEY_PREFIX = "strengthTracker.draft."; // + dayKey -> in-progress (unsaved) set data
+// All workout data is namespaced per local profile (username), so multiple people
+// sharing the same browser/device each see only their own sessions/history/progress.
 
 const dayIndexToKey = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
@@ -13,14 +12,62 @@ let state = {
   timerHandle: null
 };
 
-const START_KEY_PREFIX = "strengthTracker.startedAt.";
+// ---------------------------------------------------------------------------
+// Profiles (no password — just a chosen username, stored locally on this device)
+// ---------------------------------------------------------------------------
+const PROFILES_KEY = "strengthTracker.profiles.v1";
+const CURRENT_USER_KEY = "strengthTracker.currentUser.v1";
+
+function sanitizeUsername(raw) {
+  return (raw || "").trim().replace(/\s+/g, " ").slice(0, 24);
+}
+
+function loadProfiles() {
+  try {
+    const raw = localStorage.getItem(PROFILES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveProfiles(list) {
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(list));
+}
+
+// Returns the canonical stored casing for a username if a case-insensitive
+// match already exists among saved profiles; otherwise registers it as new
+// and returns it unchanged. This prevents "John" and "john" from silently
+// splitting into two separate data namespaces.
+function resolveOrRegisterProfile(username) {
+  const list = loadProfiles();
+  const existing = list.find((u) => u.toLowerCase() === username.toLowerCase());
+  if (existing) return existing;
+  list.push(username);
+  saveProfiles(list);
+  return username;
+}
+
+function getCurrentUser() {
+  return localStorage.getItem(CURRENT_USER_KEY);
+}
+
+function setCurrentUser(username) {
+  localStorage.setItem(CURRENT_USER_KEY, username);
+}
+
+// Build a storage key namespaced to the current profile
+function userKey(base) {
+  const u = getCurrentUser() || "guest";
+  return `strengthTracker.u.${u}.${base}`;
+}
 
 // ---------------------------------------------------------------------------
-// Storage helpers
+// Storage helpers (all scoped to the active profile via userKey())
 // ---------------------------------------------------------------------------
 function loadSessions() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(userKey("sessions.v1"));
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     console.error("Failed to load sessions", e);
@@ -29,7 +76,7 @@ function loadSessions() {
 }
 
 function saveSessions(sessions) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+  localStorage.setItem(userKey("sessions.v1"), JSON.stringify(sessions));
 }
 
 function todayISO() {
@@ -40,7 +87,7 @@ function todayISO() {
 
 function getDraft(dayKey) {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY_PREFIX + dayKey);
+    const raw = localStorage.getItem(userKey("draft." + dayKey));
     return raw ? JSON.parse(raw) : null;
   } catch (e) {
     return null;
@@ -48,11 +95,11 @@ function getDraft(dayKey) {
 }
 
 function saveDraft(dayKey, draft) {
-  localStorage.setItem(DRAFT_KEY_PREFIX + dayKey, JSON.stringify(draft));
+  localStorage.setItem(userKey("draft." + dayKey), JSON.stringify(draft));
 }
 
 function clearDraft(dayKey) {
-  localStorage.removeItem(DRAFT_KEY_PREFIX + dayKey);
+  localStorage.removeItem(userKey("draft." + dayKey));
 }
 
 // Find the most recent logged set data for a given exercise name (any past session)
@@ -104,7 +151,7 @@ function bestWeightForExercise(exerciseName) {
 // Workout timer (elapsed time since the current day's log was first opened)
 // ---------------------------------------------------------------------------
 function getStartTime(dayKey) {
-  const raw = localStorage.getItem(START_KEY_PREFIX + dayKey);
+  const raw = localStorage.getItem(userKey("startedAt." + dayKey));
   return raw ? parseInt(raw, 10) : null;
 }
 
@@ -112,13 +159,13 @@ function ensureStartTime(dayKey) {
   let ts = getStartTime(dayKey);
   if (!ts) {
     ts = Date.now();
-    localStorage.setItem(START_KEY_PREFIX + dayKey, String(ts));
+    localStorage.setItem(userKey("startedAt." + dayKey), String(ts));
   }
   return ts;
 }
 
 function clearStartTime(dayKey) {
-  localStorage.removeItem(START_KEY_PREFIX + dayKey);
+  localStorage.removeItem(userKey("startedAt." + dayKey));
 }
 
 function formatElapsed(ms) {
@@ -145,6 +192,86 @@ function stopTimerDisplay() {
   clearInterval(state.timerHandle);
   const el = document.getElementById("topbarTimer");
   if (el) el.style.display = "none";
+}
+
+// ---------------------------------------------------------------------------
+// Login / profile screen
+// ---------------------------------------------------------------------------
+function initialsFor(username) {
+  return (username || "?").trim().slice(0, 2);
+}
+
+function updateProfileChip() {
+  const btn = document.getElementById("profileChipBtn");
+  if (!btn) return;
+  const user = getCurrentUser();
+  btn.innerHTML = `<span class="avatar">${initialsFor(user)}</span><span>${user}</span>`;
+}
+
+function showLoginScreen(forSwitch) {
+  const screen = document.getElementById("loginScreen");
+  const list = document.getElementById("loginProfileList");
+  const cancelBtn = document.getElementById("loginCancelBtn");
+  const input = document.getElementById("loginUsernameInput");
+
+  screen.classList.remove("hidden");
+  input.value = "";
+
+  const profiles = loadProfiles();
+  if (profiles.length > 0) {
+    let html = `<div class="lbl">Existing profiles on this device</div>`;
+    profiles.forEach((p) => {
+      html += `<button class="profile-row-btn" data-switch-user="${p}"><span class="avatar">${initialsFor(p)}</span><span>${p}</span></button>`;
+    });
+    list.innerHTML = html;
+    list.querySelectorAll("[data-switch-user]").forEach((b) => {
+      b.addEventListener("click", () => loginAs(b.dataset.switchUser));
+    });
+  } else {
+    list.innerHTML = "";
+  }
+
+  cancelBtn.style.display = forSwitch && getCurrentUser() ? "inline-block" : "none";
+  setTimeout(() => input.focus(), 50);
+}
+
+function hideLoginScreen() {
+  document.getElementById("loginScreen").classList.add("hidden");
+}
+
+function loginAs(rawUsername) {
+  const cleaned = sanitizeUsername(rawUsername);
+  if (!cleaned) {
+    showToast("Please enter a username");
+    return;
+  }
+  const username = resolveOrRegisterProfile(cleaned);
+  setCurrentUser(username);
+  hideLoginScreen();
+  updateProfileChip();
+  state.activeTab = "today";
+  state.openExerciseIdx = null;
+  state.selectedDayKey = dayIndexToKey[new Date().getDay()];
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+  const todayBtn = document.querySelector('.tab-btn[data-tab="today"]');
+  if (todayBtn) todayBtn.classList.add("active");
+  render();
+  showToast(`Welcome, ${username}`);
+}
+
+function wireLoginScreen() {
+  document.getElementById("loginContinueBtn").addEventListener("click", () => {
+    loginAs(document.getElementById("loginUsernameInput").value);
+  });
+  document.getElementById("loginUsernameInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") loginAs(document.getElementById("loginUsernameInput").value);
+  });
+  document.getElementById("loginCancelBtn").addEventListener("click", () => {
+    hideLoginScreen();
+  });
+  document.getElementById("profileChipBtn").addEventListener("click", () => {
+    showLoginScreen(true);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -474,8 +601,8 @@ function renderHistory() {
 
   document.getElementById("exportBtn").addEventListener("click", exportCSV);
   document.getElementById("clearBtn").addEventListener("click", () => {
-    if (confirm("This will permanently delete all logged sessions on this device. Continue?")) {
-      localStorage.removeItem(STORAGE_KEY);
+    if (confirm(`This will permanently delete all logged sessions for "${getCurrentUser()}" on this device. Continue?`)) {
+      localStorage.removeItem(userKey("sessions.v1"));
       showToast("History cleared");
       render();
     }
@@ -497,7 +624,7 @@ function exportCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `strength-tracker-export-${todayISO()}.csv`;
+  a.download = `strength-tracker-export-${getCurrentUser() || "guest"}-${todayISO()}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -670,7 +797,18 @@ function render() {
   else if (state.activeTab === "progress") renderProgress();
 }
 
-render();
+// ---------------------------------------------------------------------------
+// App bootstrap: require a profile before showing any workout data
+// ---------------------------------------------------------------------------
+wireLoginScreen();
+
+if (getCurrentUser()) {
+  hideLoginScreen();
+  updateProfileChip();
+  render();
+} else {
+  showLoginScreen(false);
+}
 
 // ---------------------------------------------------------------------------
 // PWA service worker registration (enables offline use once installed)

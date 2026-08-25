@@ -9,8 +9,11 @@ const dayIndexToKey = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 let state = {
   activeTab: "today",
   selectedDayKey: dayIndexToKey[new Date().getDay()],
-  openExerciseIdx: null
+  openExerciseIdx: null,
+  timerHandle: null
 };
+
+const START_KEY_PREFIX = "strengthTracker.startedAt.";
 
 // ---------------------------------------------------------------------------
 // Storage helpers
@@ -66,6 +69,16 @@ function findLastLog(exerciseName) {
   return null;
 }
 
+// Find the previous session's sets array for a given exercise (most recent session that logged it)
+function findLastSessionSets(exerciseName) {
+  const sessions = loadSessions();
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    const entry = sessions[i].entries.find((e) => e.exerciseName === exerciseName);
+    if (entry && entry.sets.some((st) => st.weight || st.reps)) return entry.sets;
+  }
+  return null;
+}
+
 function findAllLogsForExercise(exerciseName) {
   const sessions = loadSessions();
   const out = [];
@@ -78,6 +91,60 @@ function findAllLogsForExercise(exerciseName) {
     }
   });
   return out.sort((a, b) => (a.date > b.date ? 1 : -1));
+}
+
+// Best (heaviest) weight ever logged for an exercise, excluding a given date if needed
+function bestWeightForExercise(exerciseName) {
+  const logs = findAllLogsForExercise(exerciseName);
+  if (logs.length === 0) return 0;
+  return logs.reduce((max, l) => (l.weight > max ? l.weight : max), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Workout timer (elapsed time since the current day's log was first opened)
+// ---------------------------------------------------------------------------
+function getStartTime(dayKey) {
+  const raw = localStorage.getItem(START_KEY_PREFIX + dayKey);
+  return raw ? parseInt(raw, 10) : null;
+}
+
+function ensureStartTime(dayKey) {
+  let ts = getStartTime(dayKey);
+  if (!ts) {
+    ts = Date.now();
+    localStorage.setItem(START_KEY_PREFIX + dayKey, String(ts));
+  }
+  return ts;
+}
+
+function clearStartTime(dayKey) {
+  localStorage.removeItem(START_KEY_PREFIX + dayKey);
+}
+
+function formatElapsed(ms) {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function startTimerDisplay(dayKey) {
+  const el = document.getElementById("topbarTimer");
+  if (!el) return;
+  clearInterval(state.timerHandle);
+  const startTs = ensureStartTime(dayKey);
+  el.style.display = "inline-block";
+  const tick = () => {
+    el.textContent = formatElapsed(Date.now() - startTs);
+  };
+  tick();
+  state.timerHandle = setInterval(tick, 1000);
+}
+
+function stopTimerDisplay() {
+  clearInterval(state.timerHandle);
+  const el = document.getElementById("topbarTimer");
+  if (el) el.style.display = "none";
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +186,13 @@ function renderToday() {
   document.getElementById("topbarTitle").textContent = day.dayName;
   document.getElementById("topbarSub").textContent = day.subtitle;
 
+  const timerKey = `${day.key}.${todayISO()}`;
+  if (day.type === "lift") {
+    startTimerDisplay(timerKey);
+  } else {
+    stopTimerDisplay();
+  }
+
   let html = "";
 
   // Day pill selector
@@ -142,30 +216,38 @@ function renderToday() {
     const lastText = last
       ? `Last time (${last.date}): ${last.weight ? last.weight + "kg" : ""} ${last.reps ? "x " + last.reps : ""}`.trim()
       : "No previous log yet";
+    const bestWeight = bestWeightForExercise(ex.name);
+    const hasPR = bestWeight > 0;
 
     html += `<div class="exercise ${isOpen}" data-idx="${idx}">`;
     html += `  <div class="exercise-head" data-toggle="${idx}">
                  <div>
-                   <div class="exercise-name">${ex.name}</div>
+                   <div class="exercise-name">${ex.name}${hasPR ? '<span class="pr-badge" title="All-time best: ' + bestWeight + 'kg">&#127942;</span>' : ""}</div>
                    <div class="exercise-target">Target: ${ex.target}</div>
                  </div>
                  <div class="chevron">&#9654;</div>
                </div>`;
     html += `  <div class="sets-wrap">`;
     html += `    <div class="last-time">${lastText}</div>`;
-    html += `    <div class="set-header-row"><div></div><div>Weight (kg)</div><div>Reps</div><div>${ex.isHold ? "Sec" : "RPE"}</div><div></div></div>`;
+    html += `    <div class="set-header-row"><div></div><div>Previous</div><div>${ex.isHold ? "Sec" : "kg"}</div><div>Reps</div><div>${ex.isHold ? "" : "RPE"}</div><div></div></div>`;
 
     const savedSets = (draft[ex.name] && draft[ex.name].sets) || [];
+    const prevSessionSets = findLastSessionSets(ex.name);
 
     for (let s = 0; s < ex.sets; s++) {
       const saved = savedSets[s] || {};
       const checked = saved.done ? "checked" : "";
-      html += `<div class="set-row" data-ex="${idx}" data-set="${s}">
+      const prevSet = prevSessionSets ? prevSessionSets[s] : null;
+      const prevText = prevSet && prevSet.weight ? `${prevSet.weight}kg x${prevSet.reps || "-"}` : "—";
+      const enteredWeight = parseFloat(saved.weight);
+      const isNewPR = hasPR && !isNaN(enteredWeight) && enteredWeight > bestWeight;
+      html += `<div class="set-row ${isNewPR ? "is-pr" : ""}" data-ex="${idx}" data-set="${s}">
                  <div class="set-num">${s + 1}</div>
+                 <div class="set-previous">${prevText}</div>
                  <input type="number" inputmode="decimal" placeholder="kg" class="inp-weight" value="${saved.weight || ""}" />
                  <input type="number" inputmode="numeric" placeholder="${ex.repHint}" class="inp-reps" value="${saved.reps || ""}" />
                  <input type="number" inputmode="numeric" placeholder="${ex.isHold ? "" : "1-10"}" class="inp-rpe" value="${saved.rpe || ""}" />
-                 <button class="set-done-btn ${checked}" data-done="${idx}-${s}">&#10003;</button>
+                 <button class="set-done-btn ${checked}" data-done="${idx}-${s}">${isNewPR ? "&#127942;" : "&#10003;"}</button>
                </div>`;
     }
 
@@ -228,12 +310,29 @@ function wireTodayEvents(day) {
     inp.addEventListener("click", (e) => e.stopPropagation());
   });
 
+  document.querySelectorAll(".set-row .inp-weight").forEach((inp) => {
+    inp.addEventListener("input", () => updatePRHighlight(inp, day));
+  });
+
   document.querySelectorAll(".notes-input").forEach((inp) => {
     inp.addEventListener("input", () => persistCurrentInputsToDraft(day));
     inp.addEventListener("click", (e) => e.stopPropagation());
   });
 
   document.getElementById("finishBtn").addEventListener("click", () => finishSession(day));
+}
+
+function updatePRHighlight(weightInput, day) {
+  const row = weightInput.closest(".set-row");
+  const exEl = weightInput.closest(".exercise");
+  const idx = parseInt(exEl.dataset.idx, 10);
+  const ex = day.exercises[idx];
+  const bestWeight = bestWeightForExercise(ex.name);
+  const doneBtn = row.querySelector("[data-done]");
+  const val = parseFloat(weightInput.value);
+  const isNewPR = bestWeight > 0 && !isNaN(val) && val > bestWeight;
+  row.classList.toggle("is-pr", isNewPR);
+  doneBtn.innerHTML = isNewPR ? "&#127942;" : "&#10003;";
 }
 
 function persistCurrentInputsToDraft(day) {
@@ -286,7 +385,9 @@ function finishSession(day) {
   });
   saveSessions(sessions);
   clearDraft(day.key);
-  showToast("Session saved 💪");
+  clearStartTime(`${day.key}.${todayISO()}`);
+  stopTimerDisplay();
+  showToast("Session saved");
   state.openExerciseIdx = null;
   render();
 }
@@ -295,25 +396,45 @@ function finishSession(day) {
 // Rendering: PROGRAM tab (read-only overview of the whole week)
 // ---------------------------------------------------------------------------
 function renderProgram() {
-  document.getElementById("topbarTitle").textContent = "Weekly Program";
+  document.getElementById("topbarTitle").textContent = "Routines";
   document.getElementById("topbarSub").textContent = "UL Sport Arena · Strength Building Plan";
+  stopTimerDisplay();
 
   const app = document.getElementById("app");
   let html = "";
 
   PROGRAM.forEach((day) => {
-    html += `<div class="card">
-      <h2>${day.label} — ${day.dayName}</h2>
-      <div class="meta">${day.subtitle}</div>`;
-    if (day.warmup) html += `<div class="warmup-note"><b>Warm-up:</b> ${day.warmup}</div>`;
-    day.exercises.forEach((ex, i) => {
-      html += `<div class="exercise-target" style="margin:6px 0;">${i + 1}. <b style="color:var(--ink)">${ex.name}</b> — ${ex.target}</div>`;
+    const isRest = day.type === "swim";
+    html += `<div class="routine-card ${isRest ? "rest" : ""}">
+      <div class="routine-head">
+        <div>
+          <div class="routine-day-label">${day.label}</div>
+          <div class="routine-title">${day.dayName}</div>
+          <div class="routine-sub">${day.subtitle}</div>
+        </div>
+        <div class="routine-count">${day.exercises.length} ${day.exercises.length === 1 ? "item" : "exercises"}</div>
+      </div>`;
+    html += `<div class="routine-ex-list">`;
+    day.exercises.forEach((ex) => {
+      html += `<div class="routine-ex-row"><b>${ex.name}</b><span>${ex.target}</span></div>`;
     });
-    if (day.cooldown) html += `<div class="cooldown-note"><b>Cool-down:</b> ${day.cooldown}</div>`;
+    html += `</div>`;
+    html += `<button class="btn-start ${isRest ? "secondary" : ""}" data-start="${day.key}">${isRest ? "View Details" : "Start Workout"}</button>`;
     html += `</div>`;
   });
 
   app.innerHTML = html;
+
+  document.querySelectorAll("[data-start]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.selectedDayKey = btn.dataset.start;
+      state.openExerciseIdx = null;
+      state.activeTab = "today";
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelector('.tab-btn[data-tab="today"]').classList.add("active");
+      render();
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +443,7 @@ function renderProgram() {
 function renderHistory() {
   document.getElementById("topbarTitle").textContent = "History";
   document.getElementById("topbarSub").textContent = "Past logged sessions";
+  stopTimerDisplay();
 
   const app = document.getElementById("app");
   const sessions = loadSessions().slice().reverse();
@@ -395,6 +517,7 @@ function allExerciseNames() {
 function renderProgress() {
   document.getElementById("topbarTitle").textContent = "Progress";
   document.getElementById("topbarSub").textContent = "Track your strength gains over time";
+  stopTimerDisplay();
 
   const app = document.getElementById("app");
   const sessions = loadSessions();
@@ -452,6 +575,51 @@ function currentStreak(sessions) {
   return streak;
 }
 
+// Build a small inline SVG line chart (sparkline) from an array of {date, weight} points.
+function buildSparkline(points) {
+  if (points.length < 2) {
+    return `<div class="meta" style="text-align:center;padding:14px 0;">Log this exercise a couple more times to see a trend chart.</div>`;
+  }
+  const w = 300;
+  const h = 70;
+  const padX = 6;
+  const padY = 8;
+  const weights = points.map((p) => p.weight);
+  const min = Math.min(...weights);
+  const max = Math.max(...weights);
+  const range = max - min || 1;
+
+  const coords = points.map((p, i) => {
+    const x = padX + (i / (points.length - 1)) * (w - padX * 2);
+    const y = h - padY - ((p.weight - min) / range) * (h - padY * 2);
+    return [x, y];
+  });
+
+  const linePath = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${h} L${coords[0][0].toFixed(1)},${h} Z`;
+
+  const dots = coords
+    .map(([x, y], i) => {
+      const isMax = points[i].weight === max;
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${isMax ? 3.5 : 2.5}" fill="${isMax ? "#f5c518" : "#8b7ff0"}" />`;
+    })
+    .join("");
+
+  return `<div class="sparkline-wrap">
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#6c5dd3" stop-opacity="0.35" />
+          <stop offset="100%" stop-color="#6c5dd3" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+      <path d="${areaPath}" fill="url(#sparkFill)" stroke="none" />
+      <path d="${linePath}" fill="none" stroke="#8b7ff0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      ${dots}
+    </svg>
+  </div>`;
+}
+
 function renderPRCard(exerciseName) {
   const wrap = document.getElementById("prCardWrap");
   const logs = findAllLogsForExercise(exerciseName);
@@ -464,15 +632,29 @@ function renderPRCard(exerciseName) {
   const best = logs.reduce((max, l) => (l.weight > max.weight ? l : max), logs[0]);
   const latest = logs[logs.length - 1];
 
-  let html = `<h2>${exerciseName}</h2>
-    <div class="meta">Best: <b style="color:var(--good)">${best.weight}kg</b> on ${best.date} &nbsp;·&nbsp; Latest: ${latest.weight}kg on ${latest.date}</div>`;
+  // Collapse multiple sets on the same date to that date's max weight, for a cleaner trend line
+  const byDate = new Map();
+  logs.forEach((l) => {
+    const existing = byDate.get(l.date);
+    if (!existing || l.weight > existing.weight) byDate.set(l.date, l);
+  });
+  const trendPoints = Array.from(byDate.values()).sort((a, b) => (a.date > b.date ? 1 : -1));
+
+  let html = `<h2>${exerciseName}</h2>`;
+  html += `<div class="pr-summary">
+      <div class="pr-box"><div class="lbl">All-Time Best</div><div class="val gold">${best.weight}kg &#127942;</div></div>
+      <div class="pr-box"><div class="lbl">Most Recent</div><div class="val accent">${latest.weight}kg</div></div>
+    </div>`;
+
+  html += buildSparkline(trendPoints);
 
   logs
     .slice()
     .reverse()
     .slice(0, 10)
     .forEach((l) => {
-      html += `<div class="pr-row"><div class="pr-date">${l.date} (${l.reps || "-"} reps)</div><div class="pr-val">${l.weight}kg</div></div>`;
+      const isBest = l.weight === best.weight;
+      html += `<div class="pr-row"><div class="pr-date">${l.date} (${l.reps || "-"} reps)</div><div class="pr-val ${isBest ? "is-best" : ""}">${l.weight}kg${isBest ? " &#127942;" : ""}</div></div>`;
     });
 
   wrap.innerHTML = html;

@@ -1,5 +1,5 @@
 // sw.js — minimal offline cache for the Strength Tracker PWA
-const CACHE_NAME = "strength-tracker-v1";
+const CACHE_NAME = "strength-tracker-v2";
 const ASSETS = [
   "./",
   "./index.html",

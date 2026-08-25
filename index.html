@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Strength Tracker</title>
+
+<!-- iPhone / Safari "Add to Home Screen" support -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Strength" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0f172a" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="manifest" href="manifest.json" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-title" id="topbarTitle">Strength Tracker</div>
+  <div class="topbar-sub" id="topbarSub"></div>
+</header>
+
+<main id="app"></main>
+
+<nav class="tabbar">
+  <button class="tab-btn active" data-tab="today">
+    <span class="tab-icon">&#128197;</span><span>Today</span>
+  </button>
+  <button class="tab-btn" data-tab="program">
+    <span class="tab-icon">&#128203;</span><span>Program</span>
+  </button>
+  <button class="tab-btn" data-tab="history">
+    <span class="tab-icon">&#128336;</span><span>History</span>
+  </button>
+  <button class="tab-btn" data-tab="progress">
+    <span class="tab-icon">&#128200;</span><span>Progress</span>
+  </button>
+</nav>
+
+<script src="program.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
